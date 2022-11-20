@@ -215,7 +215,33 @@ RttMeanDeviation::FloatingPointUpdate(Time m)
     Time difference = Abs(err) - m_estimatedVariation;
     m_estimatedVariation += difference * m_beta;
 }
+void
+RttMeanDeviation::FloatingPointUpdateEiffel (Time m)
+{
+  NS_LOG_FUNCTION (this << m);
+  NS_LOG_INFO("ITS EIFFEL IN RTT ESTIMATOR");
 
+  // Eiffel formula
+
+  //SRTT <- SRTT + GAIN * DELTA
+  double gain = 1/3.0;
+  Time err (m - m_estimatedRtt);
+  double gErr = err.ToDouble (Time::S) * gain;
+  m_estimatedRtt += Time::FromDouble (gErr, Time::S);
+
+
+  Time difference = err - m_estimatedVariation;
+  
+  double n_gain = gain;
+  if(difference.ToDouble(Time::S) < 0)
+    n_gain = n_gain * n_gain;
+
+
+  if(err.GetInteger() >= 0)
+    m_estimatedVariation += Time::FromDouble (difference.ToDouble (Time::S) * n_gain, Time::S);
+
+  return;
+}
 void
 RttMeanDeviation::IntegerUpdate(Time m, uint32_t rttShift, uint32_t variationShift)
 {
@@ -239,7 +265,11 @@ void
 RttMeanDeviation::Measurement(Time m)
 {
     NS_LOG_FUNCTION(this << m);
-    if (m_nSamples)
+    if(m_eiffel)
+    {
+        FloatingPointUpdateEiffel(m);
+    }
+    else if (m_nSamples)
     {
         // If both alpha and beta are reciprocal powers of two, updating can
         // be done with integer arithmetic according to Jacobson/Karels paper.

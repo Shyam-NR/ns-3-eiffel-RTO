@@ -74,6 +74,8 @@ NS_LOG_COMPONENT_DEFINE("TcpSocketBase");
 
 NS_OBJECT_ENSURE_REGISTERED(TcpSocketBase);
 
+Time lastRtt = Time (0.0);
+
 TypeId
 TcpSocketBase::GetTypeId()
 {
@@ -173,6 +175,10 @@ TcpSocketBase::GetTypeId()
                                           "On",
                                           TcpSocketState::AcceptOnly,
                                           "AcceptOnly"))
+            .AddAttribute ("Eiffel", "Enable or disable Eiffel option",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&TcpSocketBase::m_eiffel),
+                   MakeBooleanChecker ())
             .AddTraceSource("RTO",
                             "Retransmission timeout",
                             MakeTraceSourceAccessor(&TcpSocketBase::m_rto),
@@ -376,7 +382,8 @@ TcpSocketBase::TcpSocketBase(const TcpSocketBase& sock)
       m_pacingTimer(Timer::CANCEL_ON_DESTROY),
       m_ecnEchoSeq(sock.m_ecnEchoSeq),
       m_ecnCESeq(sock.m_ecnCESeq),
-      m_ecnCWRSeq(sock.m_ecnCWRSeq)
+      m_ecnCWRSeq(sock.m_ecnCWRSeq),
+      m_eiffel (sock.m_eiffel)
 {
     NS_LOG_FUNCTION(this);
     NS_LOG_LOGIC("Invoked the copy constructor");
@@ -2694,10 +2701,18 @@ TcpSocketBase::DoPeerClose()
     }
     if (m_state == LAST_ACK)
     {
-        m_dataRetrCount = m_dataRetries; // prevent endless FINs
-        NS_LOG_LOGIC("TcpSocketBase " << this << " scheduling LATO1");
-        Time lastRto = m_rtt->GetEstimate() + Max(m_clockGranularity, m_rtt->GetVariation() * 4);
-        m_lastAckEvent = Simulator::Schedule(lastRto, &TcpSocketBase::LastAckTimeout, this);
+      Time lastRto;
+      if(m_eiffel){
+        lastRto = Max(m_rtt->GetEstimate () + m_rtt->GetVariation () * 3, lastRtt + 2*m_clockGranularity);        
+        NS_LOG_INFO("Its eifel----------------------------------------------------------------------------------");
+      }
+      else{
+        lastRto = m_rtt->GetEstimate () + Max (m_clockGranularity, m_rtt->GetVariation () * 4);
+        NS_LOG_INFO("Not eifel----------------------------------------------------------------------------------");
+      }
+      NS_LOG_LOGIC ("TcpSocketBase " << this << " scheduling LATO1");
+      
+      m_lastAckEvent = Simulator::Schedule (lastRto, &TcpSocketBase::LastAckTimeout, this);
     }
 }
 
@@ -2776,9 +2791,14 @@ TcpSocketBase::SendEmptyPacket(uint8_t flags)
     AddOptions(header);
 
     // RFC 6298, clause 2.4
-    m_rto =
-        Max(m_rtt->GetEstimate() + Max(m_clockGranularity, m_rtt->GetVariation() * 4), m_minRto);
-
+    if(m_eiffel){
+        m_rto = Max(m_rtt->GetEstimate () + m_rtt->GetVariation () * 3, lastRtt + 2*m_clockGranularity);
+        NS_LOG_INFO("Its eiffel----------------------------------------------------------------------------------");
+    }
+    else{
+        m_rto = Max (m_rtt->GetEstimate () + Max (m_clockGranularity, m_rtt->GetVariation () * 4), m_minRto);
+        NS_LOG_INFO("Not eiffel----------------------------------------------------------------------------------");
+    }
     uint16_t windowSize = AdvertisedWindowSize();
     bool hasSyn = flags & TcpHeader::SYN;
     bool hasFin = flags & TcpHeader::FIN;
@@ -3666,8 +3686,15 @@ TcpSocketBase::EstimateRtt(const TcpHeader& tcpHeader)
     {
         m_rtt->Measurement(m); // Log the measurement
         // RFC 6298, clause 2.4
-        m_rto = Max(m_rtt->GetEstimate() + Max(m_clockGranularity, m_rtt->GetVariation() * 4),
-                    m_minRto);
+        if(m_eiffel){
+            m_rto = Max(m_rtt->GetEstimate () + m_rtt->GetVariation () * 3, m + 2*m_clockGranularity);
+            lastRtt = m;
+            NS_LOG_INFO("Its eiffel----------------------------------------------------------------------------------");
+        }
+        else{
+            m_rto = Max (m_rtt->GetEstimate () + Max (m_clockGranularity, m_rtt->GetVariation () * 4), m_minRto);
+            NS_LOG_INFO("Not eiffel----------------------------------------------------------------------------------");
+        }
         m_tcb->m_lastRtt = m_rtt->GetEstimate();
         m_tcb->m_minRtt = std::min(m_tcb->m_lastRtt.Get(), m_tcb->m_minRtt);
         NS_LOG_INFO(this << m_tcb->m_lastRtt << m_tcb->m_minRtt);
@@ -3693,8 +3720,14 @@ TcpSocketBase::NewAck(const SequenceNumber32& ack, bool resetRTO)
         m_retxEvent.Cancel();
         // On receiving a "New" ack we restart retransmission timer .. RFC 6298
         // RFC 6298, clause 2.4
-        m_rto = Max(m_rtt->GetEstimate() + Max(m_clockGranularity, m_rtt->GetVariation() * 4),
-                    m_minRto);
+        if(m_eiffel){
+            m_rto = Max(m_rtt->GetEstimate () + m_rtt->GetVariation () * 3, lastRtt + 2 * m_clockGranularity);
+            NS_LOG_INFO("Its eiffel----------------------------------------------------------------------------------");
+        }
+        else{
+            m_rto = Max (m_rtt->GetEstimate () + Max (m_clockGranularity, m_rtt->GetVariation () * 4), m_minRto);
+            NS_LOG_INFO("Not eiffel----------------------------------------------------------------------------------");
+        }
 
         NS_LOG_LOGIC(this << " Schedule ReTxTimeout at time " << Simulator::Now().GetSeconds()
                           << " to expire at time "

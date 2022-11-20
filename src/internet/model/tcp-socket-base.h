@@ -1392,6 +1392,7 @@ class TcpSocketBase : public TcpSocket
     TracedValue<SequenceNumber32> m_ecnCESeq{
         0}; //!< Sequence number of the last received Congestion Experienced
     TracedValue<SequenceNumber32> m_ecnCWRSeq{0}; //!< Sequence number of the last sent CWR
+    bool  m_eiffel = false;
 };
 
 /**

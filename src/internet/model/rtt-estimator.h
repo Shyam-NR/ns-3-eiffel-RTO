@@ -184,6 +184,9 @@ class RttMeanDeviation : public RttEstimator
     void FloatingPointUpdate(Time m);
     double m_alpha; //!< Filter gain for average
     double m_beta;  //!< Filter gain for variation
+
+    void FloatingPointUpdateEiffel (Time m);
+    bool m_eiffel = false;
 };
 
 } // namespace ns3
